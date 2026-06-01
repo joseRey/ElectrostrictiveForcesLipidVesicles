@@ -1,0 +1,1038 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>Vesicle Electrostriction Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: transparent;
+            font-family: 'Inter', sans-serif;
+        }
+        .flex-container {
+            display: flex;
+            flex-direction: row;
+            width: 100%;
+            align-items: flex-start;
+            justify-content: flex-start;
+        }
+        .info-card {
+            background-color: #f8fafc;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            padding: 16px;
+            margin-top: 10px;
+            box-shadow: inset 0 1px 2px rgba(0,0,0,0.02);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            min-height: 390px;
+            box-sizing: border-box;
+        }
+        .plot-card {
+            background-color: #ffffff;
+            border: 1px solid #cbd5e1;
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -2px rgba(0,0,0,0.05);
+            box-sizing: border-box;
+        }
+        .badge {
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-weight: 700;
+            font-size: 0.9em;
+            text-align: center;
+            margin-bottom: 24px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.06);
+            transition: background-color 0.2s;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .forces-box {
+            background-color: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 24px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+        }
+        .force-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .force-val {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9em;
+            font-weight: 600;
+            color: #0f172a;
+            background-color: #f8fafc;
+            padding: 2px 8px;
+            border-radius: 4px;
+            border: 1px solid #cbd5e1;
+        }
+    </style>
+</head>
+<body>
+    <div id="app-container">
+        <div class="flex-container">
+            <div style="width: 520px; flex-shrink: 0;">
+                <div id="vesicle-plot" style="width: 100%; height: 410px;"></div>
+            </div>
+            
+            <div style="flex: 1; min-width: 340px; margin-left: 20px;">
+                <div class="info-card">
+                    <div>
+                        <div style="font-size: 0.8em; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">Vesicle Shape Status</div>
+                        <div id="shape-badge" class="badge">Loading...</div>
+                        
+                        <div style="font-size: 0.8em; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">Time-Averaged Resultant Forces</div>
+                        <div class="forces-box">
+                            <div class="force-row" style="margin-bottom: 10px; border-bottom: 1px solid #f1f5f9; padding-bottom: 6px;">
+                                <span style="font-size: 0.9em; font-weight: 500; color: #334155;">F<sub>R,z</sub> (Pole):</span>
+                                <span id="force-fz" class="force-val">...</span>
+                            </div>
+                            <div class="force-row" style="padding-top: 4px;">
+                                <span style="font-size: 0.9em; font-weight: 500; color: #334155;">F<sub>R,r</sub> (Equator):</span>
+                                <span id="force-fr" class="force-val">...</span>
+                            </div>
+                        </div>
+                        
+                        <div id="progress-container" style="margin-top: 12px; display: none;">
+                            <div style="font-size: 0.8em; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; display: flex; justify-content: space-between;">
+                                <span>Animation Frame</span>
+                                <span id="slider-val-text" style="color: #2563eb; font-family: 'JetBrains Mono', monospace; font-weight: 600;">Static</span>
+                            </div>
+                            <input type="range" id="anim-slider" min="0" max="0" value="0" style="width: 100%; accent-color: #2563eb; cursor: pointer; margin: 4px 0;">
+                        </div>
+
+                        <!-- Manual (instant, client-side) operating-point controls.
+                             Shown only when no animation is active. Dragging these
+                             updates all three panels in the browser with no server
+                             rerun; Streamlit's URL state is synced only on release. -->
+                        <div id="manual-controls" style="margin-top: 12px; display: none;">
+                            <div style="font-size: 0.8em; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">Operating Point (live)</div>
+                            <div style="display:flex; justify-content:space-between; font-size:0.78em; color:#334155; margin-bottom:2px;">
+                                <span id="manual-ratio-label">Ratio</span>
+                                <span id="manual-ratio-val" style="font-family:'JetBrains Mono',monospace; font-weight:600; color:#2563eb;">1.00</span>
+                            </div>
+                            <input type="range" id="manual-ratio" min="-2" max="2" step="0.01" value="0" style="width:100%; accent-color:#2563eb; cursor:pointer; margin:2px 0 10px 0;">
+                            <div style="display:flex; justify-content:space-between; font-size:0.78em; color:#334155; margin-bottom:2px;">
+                                <span>Frequency (Hz)</span>
+                                <span id="manual-freq-val" style="font-family:'JetBrains Mono',monospace; font-weight:600; color:#2563eb;">1e+05</span>
+                            </div>
+                            <input type="range" id="manual-freq" min="0" max="9" step="0.01" value="5" style="width:100%; accent-color:#2563eb; cursor:pointer; margin:2px 0;">
+                        </div>
+                    </div>
+                    
+                    <div style="border-top: 1px solid #e2e8f0; padding-top: 12px; margin-top: 16px;">
+                        <p style="font-size: 0.8em; color: #475569; line-height: 1.4; margin: 0;">
+                            ℹ️ <strong>Visual Note:</strong> Deformation is schematic (not to scale). The surface colors represent the local time-averaged Maxwell stress distribution.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="flex-container" style="margin-top: 20px;">
+            <div class="plot-card" style="flex: 1 1 0; min-width: 0; height: 440px;">
+                <div id="phase-title" style="font-size: 1.0em; font-weight: 700; color: #0f172a; margin-bottom: 12px; font-family: 'Inter', sans-serif;">
+                    2. Conductivity vs. Frequency Phase Diagram
+                </div>
+                <div id="phase-plot" style="width: 100%; height: 340px;"></div>
+                <div style="font-size:0.75em;color:#0f172a;margin-top:8px;line-height:1.3;font-family: 'Inter', sans-serif;">
+                    <span style="background:#dc2626;color:#fff;padding:1px 7px;border-radius:3px;">&#9632;</span> Prolate&nbsp;&nbsp;
+                    <span style="background:#ea580c;color:#fff;padding:1px 7px;border-radius:3px;">&#9632;</span> Oblate&nbsp;&nbsp;
+                    <span style="background:#94a3b8;color:#fff;padding:1px 7px;border-radius:3px;">&#9632;</span> Spherical
+                </div>
+            </div>
+            <div class="plot-card" style="flex: 1 1 0; min-width: 0; margin-left: 20px; height: 440px;">
+                <div style="font-size: 1.0em; font-weight: 700; color: #0f172a; margin-bottom: 12px; font-family: 'Inter', sans-serif;">
+                    3. Frequency Sweep (Forces & Impedance)
+                </div>
+                <div id="sweep-plot" style="width: 100%; height: 340px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        (function() {
+            var COND_MODE = true;
+            var peak_prolate = 1.0;
+            var peak_oblate = 1.0;
+            var max_p = 1.0;
+            var EPS_0 = 8.854187817e-12;
+            var R = 10.0 * 1e-6;
+            var delta = 5.0 * 1e-9;
+            var eps_m = 5.0;
+            var sigma_m = 1e-8;
+            var sigma_in_uS = 15.0;
+            var E0_Vcm = 200.0;
+            
+            var sweepData = [];
+            var metadata = [];
+            var isAnimated = false;
+            var loopEnabled = false;
+            var manualRatio = 1.0;
+            var manualFreq = 1e5;
+            
+            var gd = document.getElementById("vesicle-plot");
+            var gd_phase = document.getElementById("phase-plot");
+            var gd_sweep = document.getElementById("sweep-plot");
+
+            // Shared Plotly config: keep ONLY the camera (snapshot/toImage) button in
+            // the modebar, hide the Plotly logo and all other hover tools.
+            var PLOT_CONFIG = {
+                responsive: true,
+                displaylogo: false,
+                modeBarButtons: [['toImage']],
+                displayModeBar: true
+            };
+            
+            var plotsInitialized = false;
+            var currentCondMode = null;
+            var currentModeName = null;
+
+            function formatFreq(freq_val) {
+                if (freq_val < 1000) {
+                    return freq_val.toFixed(0) + " Hz";
+                } else if (freq_val < 1e6) {
+                    return (freq_val / 1000).toFixed(0) + " kHz";
+                } else if (freq_val < 1e9) {
+                    return (freq_val / 1e6).toFixed(1) + " MHz";
+                } else {
+                    return (freq_val / 1e9).toFixed(1) + " GHz";
+                }
+            }
+
+            function resultant_forces_js(freq, eps_in, eps_out, sigma_in_uS, sigma_out_uS) {
+                var sigma_in = sigma_in_uS * 1e-4;
+                var sigma_out = sigma_out_uS * 1e-4;
+                var E0 = E0_Vcm * 100.0;
+                var Rs = sigma_in / sigma_out;
+                var Re = eps_in / eps_out;
+                
+                var f_c = (sigma_in + 2 * sigma_out) / (2 * Math.PI * EPS_0 * (eps_in + 2 * eps_out));
+                var alpha = 1.0 / (1.0 + Math.pow(freq / f_c, 2));
+                
+                var Rs_b = 1.0 + alpha * (Rs - 1.0);
+                var Re_b = Re;
+                
+                var pref = (9 * eps_out) / (8 * Math.PI * (2 + Rs_b)) * E0 * E0;
+                var FR_z = pref * (Rs_b * Rs_b - Re_b);
+                var FR_r = pref * (Re_b - 1.0);
+                
+                var scale = 4.0 * Math.PI / (9.0 * E0 * E0) * 1e-2;
+                return [FR_z * scale, FR_r * scale];
+            }
+
+            function get_impedance_js(freq, eps_in, eps_out, sigma_in_uS, sigma_out_uS, R, delta, eps_m, sigma_m) {
+                var sigma_in = sigma_in_uS * 1e-4;
+                var sigma_out = sigma_out_uS * 1e-4;
+                var omega = 2.0 * Math.PI * freq;
+                
+                var si_r = sigma_in;
+                var si_i = omega * EPS_0 * eps_in;
+                var so_r = sigma_out;
+                var so_i = omega * EPS_0 * eps_out;
+                
+                var num_r = si_r - so_r;
+                var num_i = si_i - so_i;
+                
+                var den_r = si_r + 2 * so_r;
+                var den_i = si_i + 2 * so_i;
+                
+                var den_mag2 = den_r * den_r + den_i * den_i;
+                var K_cm_r = (num_r * den_r + num_i * den_i) / den_mag2;
+                var K_cm_i = (num_i * den_r - num_r * den_i) / den_mag2;
+                
+                var one_plus_3K_r = 1.0 + 3.0 * K_cm_r;
+                var three_K_i = 3.0 * K_cm_i;
+                
+                var s_eff_r = so_r * one_plus_3K_r - so_i * three_K_i;
+                var s_eff_i = so_r * three_K_i + so_i * one_plus_3K_r;
+                
+                var scale = 4.0 * Math.PI * R;
+                var den_Z_r = s_eff_r * scale;
+                var den_Z_i = s_eff_i * scale;
+                var den_Z_mag2 = den_Z_r * den_Z_r + den_Z_i * den_Z_i;
+                
+                var Z_r = den_Z_r / den_Z_mag2;
+                var Z_i = -den_Z_i / den_Z_mag2;
+                return [Z_r, Z_i];
+            }
+
+            function effective_coefficients_js(freq, eps_in, eps_out, sigma_in_uS, sigma_out_uS, R, delta, eps_m, sigma_m, E0_Vcm) {
+                var sigma_in = sigma_in_uS * 1e-4;
+                var sigma_out = sigma_out_uS * 1e-4;
+                var E0 = E0_Vcm * 100.0;
+                var omega = 2 * Math.PI * freq;
+                
+                var si_r = sigma_in;
+                var si_i = omega * EPS_0 * eps_in;
+                var so_r = sigma_out;
+                var so_i = omega * EPS_0 * eps_out;
+                
+                var Ym_r = sigma_m / delta;
+                var Ym_i = (omega * EPS_0 * eps_m) / delta;
+                
+                var Ym_R_r = Ym_r * R;
+                var Ym_R_i = Ym_i * R;
+                
+                var num_r = Ym_R_r * si_r - Ym_R_i * si_i;
+                var num_i = Ym_R_r * si_i + Ym_R_i * si_r;
+                
+                var den_r = Ym_R_r + si_r;
+                var den_i = Ym_R_i + si_i;
+                
+                var den_mag2 = den_r * den_r + den_i * den_i;
+                var s_eff_r = (num_r * den_r + num_i * den_i) / den_mag2;
+                var s_eff_i = (num_i * den_r - num_r * den_i) / den_mag2;
+                
+                var num_f_r = s_eff_r - so_r;
+                var num_f_i = s_eff_i - so_i;
+                
+                var den_f_r = s_eff_r + 2 * so_r;
+                var den_f_i = s_eff_i + 2 * so_i;
+                
+                var den_f_mag2 = den_f_r * den_f_r + den_f_i * den_f_i;
+                var fcm_r = (num_f_r * den_f_r + num_f_i * den_f_i) / den_f_mag2;
+                var fcm_i = (num_f_i * den_f_r - num_f_r * den_f_i) / den_f_mag2;
+                
+                var a_r = fcm_r * E0;
+                var a_i = fcm_i * E0;
+                
+                var num_b_r = 3 * so_r * E0;
+                var num_b_i = 3 * so_i * E0;
+                
+                var b_r = (num_b_r * den_f_r + num_b_i * den_f_i) / den_f_mag2;
+                var b_i = (num_b_i * den_f_r - num_b_r * den_f_i) / den_f_mag2;
+                
+                return [a_r, a_i, b_r, b_i, E0];
+            }
+
+            function stress_coefficients_js(a_r, a_i, b_r, b_i, E0, eps_in, eps_out) {
+                var E0_2a_r = E0 + 2 * a_r;
+                var E0_2a_i = 2 * a_i;
+                var E0_2a_mag2 = E0_2a_r * E0_2a_r + E0_2a_i * E0_2a_i;
+                
+                var b_mag2 = b_r * b_r + b_i * b_i;
+                
+                var minus_E0_a_r = -E0 + a_r;
+                var minus_E0_a_i = a_i;
+                var minus_E0_a_mag2 = minus_E0_a_r * minus_E0_a_r + minus_E0_a_i * minus_E0_a_i;
+                
+                var K_rc = 0.25 * EPS_0 * (eps_out * E0_2a_mag2 - eps_in * b_mag2);
+                var K_rs = 0.25 * EPS_0 * (-eps_out * minus_E0_a_mag2 + eps_in * b_mag2);
+                
+                var cross_real = E0_2a_r * minus_E0_a_r + 2 * a_i * a_i;
+                var K_theta = 0.5 * EPS_0 * (eps_out * cross_real + eps_in * b_mag2);
+                
+                return [K_rc, K_rs, K_theta];
+            }
+
+            function silhouette_js(a, b, n) {
+                var xs = [], ys = [], phis = [];
+                for (var i = 0; i < n; i++) {
+                    var phi = i * 2 * Math.PI / n;
+                    xs.push(b * Math.sin(phi));
+                    ys.push(a * Math.cos(phi));
+                    phis.push(phi);
+                }
+                return [xs, ys, phis];
+            }
+
+            function latitude_ellipse_js(a, b, lat_frac, n) {
+                var phi0 = lat_frac * Math.PI;
+                var r = b * Math.sin(phi0);
+                var y0 = a * Math.cos(phi0);
+                var xs = [], ys = [];
+                for (var i = 0; i <= n; i++) {
+                    var t = i * 2 * Math.PI / n;
+                    xs.push(r * Math.cos(t));
+                    ys.push(y0 + 0.28 * r * Math.sin(t));
+                }
+                return [xs, ys];
+            }
+
+            function meridian_arc_js(a, b, theta0, n) {
+                var xs = [], ys = [];
+                for (var i = 0; i < n; i++) {
+                    var phi = i * Math.PI / (n - 1);
+                    xs.push(b * Math.sin(phi) * Math.cos(theta0));
+                    ys.push(a * Math.cos(phi) + 0.28 * b * Math.sin(phi) * Math.sin(theta0));
+                }
+                return [xs, ys];
+            }
+
+            function get_vesicle_shape_and_stress(ratio_val, freq_val) {
+                var eps_in_val, eps_out_val, sigma_out_uS_val;
+                if (COND_MODE) {
+                    eps_in_val = 80.0;
+                    eps_out_val = 80.0;
+                    sigma_out_uS_val = sigma_in_uS / ratio_val;
+                } else {
+                    sigma_out_uS_val = sigma_in_uS;
+                    eps_in_val = 80.0;
+                    eps_out_val = 80.0 / ratio_val;
+                }
+                
+                var forces = resultant_forces_js(freq_val, eps_in_val, eps_out_val, sigma_in_uS, sigma_out_uS_val);
+                var Fz = forces[0];
+                var Fr = forces[1];
+
+                // Map the resultant-force imbalance to a deformation that varies
+                // SMOOTHLY and monotonically from 0 (perfect sphere) to +/-1 (max
+                // prolate / oblate). We normalize |diff| between the spherical
+                // threshold and the peak force, then apply a gamma<1 power law so the
+                // shape responds quickly yet passes continuously through every
+                // intermediate value — no plateau, no cliff, and exactly round at or
+                // below the threshold. (The old log mapping saturated almost
+                // immediately and then dropped abruptly, which looked non-gradual.)
+                var forces_lo = resultant_forces_js(1.0, eps_in_val, eps_out_val, sigma_in_uS, sigma_out_uS_val);
+                var thr = 0.02 * Math.max(Math.abs(forces_lo[0] - forces_lo[1]), 1e-12);
+
+                var diff = Fz - Fr;
+                var _adiff = Math.abs(diff);
+                var _peak = (diff >= 0 ? peak_prolate : peak_oblate);
+                var _span = _peak - thr;
+                var _sign = (diff >= 0 ? 1.0 : -1.0);
+                var deform;
+                if (_adiff <= thr) {
+                    deform = 0.0;                        // balanced -> perfect sphere
+                } else if (_span <= 0) {
+                    // Force past the calibration peak -> max deformation, never a sphere
+                    // (prevents the one-frame \"bounce\" at ratio=100).
+                    deform = _sign;
+                } else {
+                    var _u = (_adiff - thr) / _span;
+                    _u = Math.max(0.0, Math.min(1.0, _u));
+                    deform = _sign * Math.pow(_u, 0.5); // gamma=0.5
+                }
+                
+                deform = Math.max(-1.0, Math.min(1.0, deform));
+                var k = Math.max(0.25, Math.min(1.9, 1.0 + 0.70 * deform));
+                var a_ax = 10.0 * Math.pow(k, 2/3);
+                var b_ax = 10.0 / Math.pow(k, 1/3);
+                
+                var coeffs = effective_coefficients_js(freq_val, eps_in_val, eps_out_val, sigma_in_uS, sigma_out_uS_val, R, delta, eps_m, sigma_m, E0_Vcm);
+                var a_dip_r = coeffs[0];
+                var a_dip_i = coeffs[1];
+                var b_int_r = coeffs[2];
+                var b_int_i = coeffs[3];
+                var E0 = coeffs[4];
+                
+                var stress_coeffs = stress_coefficients_js(a_dip_r, a_dip_i, b_int_r, b_int_i, E0, eps_in_val, eps_out_val);
+                var K_rc = stress_coeffs[0];
+                var K_rs = stress_coeffs[1];
+                var K_theta = stress_coeffs[2];
+                
+                var sil = silhouette_js(a_ax, b_ax, 180);
+                var x_s = sil[0];
+                var y_s = sil[1];
+                var phi_s = sil[2];
+                
+                var pressure = [];
+                for (var i = 0; i < phi_s.length; i++) {
+                    var cos_phi = Math.cos(phi_s[i]);
+                    var sin_phi = Math.sin(phi_s[i]);
+                    var p_val = K_rc * cos_phi * cos_phi + K_rs * sin_phi * sin_phi + K_theta * cos_phi * sin_phi;
+                    pressure.push(p_val);
+                }
+                
+                return {
+                    a_ax: a_ax,
+                    b_ax: b_ax,
+                    x_s: x_s,
+                    y_s: y_s,
+                    pressure: pressure,
+                    Fz: Fz,
+                    Fr: Fr
+                };
+            }
+
+            function get_shape_description(diff, eps_in_val, eps_out_val, sigma_out_uS_val) {
+                var forces_lo = resultant_forces_js(1.0, eps_in_val, eps_out_val, 15.0, sigma_out_uS_val);
+                var thr = 0.02 * Math.max(Math.abs(forces_lo[0] - forces_lo[1]), 1e-12);
+                
+                if (diff > thr) {
+                    return { desc: "Prolate (stretched along the field)", color: "#dc2626" };
+                } else if (diff < -thr) {
+                    return { desc: "Oblate (compressed along the field)", color: "#ea580c" };
+                } else {
+                    return { desc: "Spherical (forces balanced)", color: "#64748b" };
+                }
+            }
+
+            function findNearestSweepData(ratio) {
+                var minDist = Infinity;
+                var best = sweepData[0];
+                for (var i = 0; i < sweepData.length; i++) {
+                    var dist = Math.abs(Math.log10(ratio) - Math.log10(sweepData[i].ratio));
+                    if (dist < minDist) {
+                        minDist = dist;
+                        best = sweepData[i];
+                    }
+                }
+                return best;
+            }
+
+            function updateVesiclePlot(a_ax, b_ax, x_s, y_s, pressure) {
+                var update_sil = {
+                    x: [x_s],
+                    y: [y_s],
+                    'marker.color': [pressure]
+                };
+                Plotly.restyle(gd, update_sil, [0]);
+                
+                var lat_fracs = [0.15, 0.29, 0.43, 0.57, 0.71, 0.85];
+                for (var i = 0; i < lat_fracs.length; i++) {
+                    var lat_xy = latitude_ellipse_js(a_ax, b_ax, lat_fracs[i], 80);
+                    Plotly.restyle(gd, { x: [lat_xy[0]], y: [lat_xy[1]] }, [1 + i]);
+                }
+                
+                var mer_thetas = [0, Math.PI / 3, 2 * Math.PI / 3];
+                for (var i = 0; i < mer_thetas.length; i++) {
+                    var mer_xy = meridian_arc_js(a_ax, b_ax, mer_thetas[i], 100);
+                    Plotly.restyle(gd, { x: [mer_xy[0]], y: [mer_xy[1]] }, [1 + lat_fracs.length + i]);
+                }
+            }
+
+            function updatePlotsForOperatingPoint(ratio, freq) {
+                var shapeInfo = get_vesicle_shape_and_stress(ratio, freq);
+                
+                updateVesiclePlot(shapeInfo.a_ax, shapeInfo.b_ax, shapeInfo.x_s, shapeInfo.y_s, shapeInfo.pressure);
+                
+                Plotly.restyle(gd_phase, {
+                    x: [[Math.log10(freq)]],
+                    y: [[Math.log10(ratio)]]
+                }, [2]);
+                
+                var sweepCurve = findNearestSweepData(ratio);
+                
+                var eps_in_val = 80.0;
+                var eps_out_val = COND_MODE ? 80.0 : (80.0 / ratio);
+                var sigma_out_uS_val = COND_MODE ? (15.0 / ratio) : 15.0;
+                
+                var forces = resultant_forces_js(freq, eps_in_val, eps_out_val, 15.0, sigma_out_uS_val);
+                var z_imp = get_impedance_js(freq, eps_in_val, eps_out_val, 15.0, sigma_out_uS_val, R, delta, eps_m, sigma_m);
+                
+                var Fz_curr = forces[0];
+                var Fr_curr = forces[1];
+                var Zr_curr = z_imp[0];
+                var Zi_curr = z_imp[1];
+                
+                Plotly.restyle(gd_sweep, {
+                    y: [sweepCurve.Fz, sweepCurve.Fr, sweepCurve.Zr, sweepCurve.Zi]
+                }, [0, 1, 2, 3]);
+                
+                Plotly.restyle(gd_sweep, {
+                    x: [[freq], [freq], [freq], [freq]],
+                    y: [[Fz_curr], [Fr_curr], [Zr_curr], [Zi_curr]]
+                }, [5, 6, 7, 8]);
+
+                // Clip-proof autoranging (manual/static mode only — never during an
+                // animation loop, which uses the pinned range to stay jitter-free).
+                // Fit each y-axis to the curves actually drawn, with padding and a
+                // floor so a balanced (force≈0) point still shows a sensible scale.
+                function _fitRange(arrays, floor) {
+                    var lo = Infinity, hi = -Infinity;
+                    for (var k = 0; k < arrays.length; k++) {
+                        var a = arrays[k];
+                        if (!a) continue;
+                        for (var j = 0; j < a.length; j++) {
+                            var v = a[j];
+                            if (v == null || !isFinite(v)) continue;
+                            if (v < lo) lo = v;
+                            if (v > hi) hi = v;
+                        }
+                    }
+                    if (!isFinite(lo) || !isFinite(hi)) return null;
+                    var span = hi - lo;
+                    if (span < floor) {
+                        var mid = 0.5 * (lo + hi);
+                        lo = mid - 0.5 * floor; hi = mid + 0.5 * floor; span = hi - lo;
+                    }
+                    var pad = 0.12 * span;
+                    return [lo - pad, hi + pad];
+                }
+                // include the current-point markers in the fit so they never sit on the edge
+                var fRange = _fitRange([sweepCurve.Fz, sweepCurve.Fr, [Fz_curr, Fr_curr]], 0.05);
+                var zPeak = 0;
+                [sweepCurve.Zr, sweepCurve.Zi, [Zr_curr, Zi_curr]].forEach(function(a){
+                    if (a) a.forEach(function(v){ if (isFinite(v)) zPeak = Math.max(zPeak, Math.abs(v)); });
+                });
+                var zRange = _fitRange([sweepCurve.Zr, sweepCurve.Zi, [Zr_curr, Zi_curr]],
+                                       zPeak > 0 ? 0.05 * zPeak : 1.0);
+                var relObj = {
+                    'shapes[0].x0': freq,
+                    'shapes[0].x1': freq
+                };
+                if (fRange) relObj['yaxis.range'] = fRange;
+                if (zRange) relObj['yaxis2.range'] = zRange;
+                Plotly.relayout(gd_sweep, relObj);
+                
+                updateMetadataStatic(ratio, freq, Fz_curr, Fr_curr, eps_in_val, eps_out_val, sigma_out_uS_val);
+            }
+
+            function updateMetadataStatic(ratio, freq, Fz, Fr, eps_in_val, eps_out_val, sigma_out_uS_val) {
+                var diff = Fz - Fr;
+                var descColor = get_shape_description(diff, eps_in_val, eps_out_val, sigma_out_uS_val);
+                
+                var badge = document.getElementById("shape-badge");
+                if (badge) {
+                    badge.innerText = descColor.desc;
+                    badge.style.backgroundColor = descColor.color;
+                }
+                var fzSpan = document.getElementById("force-fz");
+                if (fzSpan) {
+                    fzSpan.innerText = Fz.toExponential(2) + " N/m²";
+                }
+                var frSpan = document.getElementById("force-fr");
+                if (frSpan) {
+                    frSpan.innerText = Fr.toExponential(2) + " N/m²";
+                }
+                var sliderVal = document.getElementById("slider-val-text");
+                if (sliderVal) {
+                    var rat_type = COND_MODE ? "σ" : "ε";
+                    sliderVal.innerHTML = "f = " + formatFreq(freq) + " | " + rat_type + "-ratio = " + ratio.toFixed(2);
+                }
+            }
+
+            function updateMetadata(index) {
+                var item = metadata[index];
+                if (item) {
+                    var badge = document.getElementById("shape-badge");
+                    if (badge) {
+                        badge.innerText = item.desc;
+                        badge.style.backgroundColor = item.color;
+                    }
+                    var fzSpan = document.getElementById("force-fz");
+                    if (fzSpan) {
+                        fzSpan.innerText = item.fz + " N/m²";
+                    }
+                    var frSpan = document.getElementById("force-fr");
+                    if (frSpan) {
+                        frSpan.innerText = item.fr + " N/m²";
+                    }
+                    var sliderVal = document.getElementById("slider-val-text");
+                    if (sliderVal && item.val_lbl) {
+                        sliderVal.innerText = item.val_lbl;
+                    }
+                    var animSlider = document.getElementById("anim-slider");
+                    if (animSlider) {
+                        animSlider.value = index;
+                    }
+                }
+            }
+
+            // Lightweight per-frame update for panels #2 and #3.
+            // Bug fix: previously these panels were driven by Plotly.animate(...,
+            // {redraw:true}) every frame, which re-rendered the entire heatmap
+            // (panel #2 flash) and, combined with unpinned axes, re-ranged the
+            // sweep (panel #3 zoom). We now move ONLY the marker/curves with
+            // restyle + a single relayout for the vline. The heatmap (trace 0)
+            // and axes are never touched, so there is no flash and no zoom.
+            function updatePhaseSweepForFrame(index) {
+                var item = metadata[index];
+                if (!item) return;
+                var ratio = item.ratio;
+                var freq = item.freq;
+
+                // Keep the live operating-point sliders tracking the animation so
+                // their position reflects the current frame (and is correct the
+                // instant the user grabs one to take over).
+                var mRk = document.getElementById("manual-ratio");
+                var mFk = document.getElementById("manual-freq");
+                if (mRk) mRk.value = Math.log10(ratio);
+                if (mFk) mFk.value = Math.log10(freq);
+                var rlabk = document.getElementById("manual-ratio-val");
+                var flabk = document.getElementById("manual-freq-val");
+                if (rlabk) rlabk.innerText = ratio.toFixed(2);
+                if (flabk) flabk.innerText = (freq >= 1000 ? freq.toExponential(0) : freq.toFixed(0));
+                manualRatio = ratio; manualFreq = freq;
+
+                // Panel #2: move only the operating-point star (trace index 2).
+                if (gd_phase && gd_phase.data) {
+                    Plotly.restyle(gd_phase, {
+                        x: [[Math.log10(freq)]],
+                        y: [[Math.log10(ratio)]]
+                    }, [2]);
+                }
+
+                // Panel #3: swap the per-ratio curves and move the marker dots +
+                // vline. Axes are pinned (autorange:false) so nothing re-ranges.
+                if (gd_sweep && gd_sweep.data) {
+                    var sweepCurve = findNearestSweepData(ratio);
+
+                    var eps_in_val = 80.0;
+                    var eps_out_val = COND_MODE ? 80.0 : (80.0 / ratio);
+                    var sigma_out_uS_val = COND_MODE ? (15.0 / ratio) : 15.0;
+                    var forces = resultant_forces_js(freq, eps_in_val, eps_out_val, 15.0, sigma_out_uS_val);
+                    var z_imp = get_impedance_js(freq, eps_in_val, eps_out_val, 15.0, sigma_out_uS_val, R, delta, eps_m, sigma_m);
+
+                    Plotly.restyle(gd_sweep, {
+                        y: [sweepCurve.Fz, sweepCurve.Fr, sweepCurve.Zr, sweepCurve.Zi]
+                    }, [0, 1, 2, 3]);
+                    Plotly.restyle(gd_sweep, {
+                        x: [[freq], [freq], [freq], [freq]],
+                        y: [[forces[0]], [forces[1]], [z_imp[0]], [z_imp[1]]]
+                    }, [5, 6, 7, 8]);
+                    Plotly.relayout(gd_sweep, {
+                        'shapes[0].x0': freq,
+                        'shapes[0].x1': freq
+                    });
+                }
+            }
+
+            function attachListeners() {
+                gd_phase.removeAllListeners && gd_phase.removeAllListeners('plotly_click');
+                gd_sweep.removeAllListeners && gd_sweep.removeAllListeners('plotly_click');
+
+                // Soft URL sync (no rerun) used by live manual interaction.
+                function _syncStateToStreamlit(r, f) {
+                    try {
+                        var u = new URL(window.parent.location.href);
+                        u.searchParams.set("ratio", r);
+                        u.searchParams.set("freq", f);
+                        window.parent.history.replaceState(null, null, u.toString());
+                    } catch (e) {}
+                }
+                // Stop a running animation and hand control to manual mode. Halts the
+                // client loop instantly, then tells Streamlit to flip the toggles off
+                // (one rerun). Seeds the new operating point so it doesn't jump.
+                function _stopAnimIfRunning(r, f) {
+                    if (!isAnimated) return;
+                    loopEnabled = false;
+                    isAnimated = false;
+                    try { Plotly.animate(gd, [], {mode: "immediate"}); } catch (e) {}
+                    try {
+                        var u = new URL(window.parent.location.href);
+                        u.searchParams.set("stop_anim", "1");
+                        u.searchParams.set("ratio", r);
+                        u.searchParams.set("freq", f);
+                        window.parent.history.replaceState(null, null, u.toString());
+                        window.parent.dispatchEvent(new PopStateEvent('popstate', { state: null }));
+                    } catch (e) {}
+                }
+
+                gd_phase.on('plotly_click', function(data) {
+                    if (data && data.points && data.points.length > 0) {
+                        var pt = data.points[0];
+                        var clicked_log_f = pt.x;
+                        var clicked_log_r = pt.y;
+                        if (clicked_log_f !== undefined && clicked_log_r !== undefined) {
+                            var clicked_f = Math.pow(10, clicked_log_f);
+                            var clicked_r = Math.pow(10, clicked_log_r);
+
+                            // Clicking the phase map always moves the operating point;
+                            // if an animation is running it is stopped first.
+                            _stopAnimIfRunning(clicked_r, clicked_f);
+                            manualRatio = clicked_r; manualFreq = clicked_f;
+                            var mR = document.getElementById("manual-ratio");
+                            var mF = document.getElementById("manual-freq");
+                            if (mR) mR.value = Math.log10(clicked_r);
+                            if (mF) mF.value = Math.log10(clicked_f);
+                            var rlab = document.getElementById("manual-ratio-val");
+                            var flab = document.getElementById("manual-freq-val");
+                            if (rlab) rlab.innerText = clicked_r.toFixed(2);
+                            if (flab) flab.innerText = (clicked_f >= 1000 ? clicked_f.toExponential(0) : clicked_f.toFixed(0));
+                            updatePlotsForOperatingPoint(clicked_r, clicked_f);
+                            _syncStateToStreamlit(clicked_r, clicked_f);
+                        }
+                    }
+                });
+                
+                gd_sweep.on('plotly_click', function(data) {
+                    if (data && data.points && data.points.length > 0) {
+                        var pt = data.points[0];
+                        var clicked_f = pt.x;
+                        if (clicked_f) {
+                            _stopAnimIfRunning(manualRatio, clicked_f);
+                            manualFreq = clicked_f;
+                            var mF = document.getElementById("manual-freq");
+                            if (mF) mF.value = Math.log10(clicked_f);
+                            var flab = document.getElementById("manual-freq-val");
+                            if (flab) flab.innerText = (clicked_f >= 1000 ? clicked_f.toExponential(0) : clicked_f.toFixed(0));
+                            updatePlotsForOperatingPoint(manualRatio, clicked_f);
+                            _syncStateToStreamlit(manualRatio, clicked_f);
+                        }
+                    }
+                });
+                
+                var animSlider = document.getElementById("anim-slider");
+                if (animSlider) {
+                    // Clone and replace to remove previous event listeners
+                    var newSlider = animSlider.cloneNode(true);
+                    animSlider.parentNode.replaceChild(newSlider, animSlider);
+                    
+                    newSlider.addEventListener('input', function(e) {
+                        loopEnabled = false;
+                        var idx = parseInt(e.target.value);
+                        if (!isNaN(idx)) {
+                            var frameName = "f" + idx;
+                            updateMetadata(idx);
+                            Plotly.animate(gd, [frameName], {
+                                frame: {duration: 0, redraw: true},
+                                mode: "immediate"
+                            });
+                            updatePhaseSweepForFrame(idx);
+                        }
+                    });
+                }
+
+                // ── Manual operating-point sliders (instant, client-side) ──────────
+                // Dragging updates all three panels in the browser via
+                // updatePlotsForOperatingPoint — NO Streamlit rerun. The URL is
+                // soft-synced on release via _syncStateToStreamlit (defined above).
+                var mRatio = document.getElementById("manual-ratio");
+                var mFreq = document.getElementById("manual-freq");
+                if (mRatio && mFreq) {
+                    // clone to drop any stale listeners from a previous render
+                    var mR = mRatio.cloneNode(true); mRatio.parentNode.replaceChild(mR, mRatio);
+                    var mF = mFreq.cloneNode(true); mFreq.parentNode.replaceChild(mF, mFreq);
+
+                    function _currentManual() {
+                        return {
+                            ratio: Math.pow(10, parseFloat(mR.value)),
+                            freq: Math.pow(10, parseFloat(mF.value))
+                        };
+                    }
+                    function _onManualInput() {
+                        var v = _currentManual();
+                        // Grabbing a slider during animation stops it and takes over.
+                        _stopAnimIfRunning(v.ratio, v.freq);
+                        var rlab = document.getElementById("manual-ratio-val");
+                        var flab = document.getElementById("manual-freq-val");
+                        if (rlab) rlab.innerText = v.ratio.toFixed(2);
+                        if (flab) flab.innerText = (v.freq >= 1000 ? v.freq.toExponential(0) : v.freq.toFixed(0));
+                        manualRatio = v.ratio; manualFreq = v.freq;
+                        updatePlotsForOperatingPoint(v.ratio, v.freq);   // instant, no server
+                    }
+                    function _onManualCommit() {
+                        var v = _currentManual();
+                        _syncStateToStreamlit(v.ratio, v.freq);
+                    }
+                    mR.addEventListener('input', _onManualInput);
+                    mF.addEventListener('input', _onManualInput);
+                    mR.addEventListener('change', _onManualCommit);
+                    mF.addEventListener('change', _onManualCommit);
+                }
+            }
+
+            function startAnimationLoop() {
+                loopEnabled = true;
+                
+                function syncMetadata() {
+                    var frameName = "";
+                    if (gd._currentFrame) {
+                        frameName = typeof gd._currentFrame === 'string' ? gd._currentFrame : (gd._currentFrame.name || "");
+                    }
+                    if (frameName) {
+                        var idx = parseInt(frameName.replace('f', ''));
+                        if (!isNaN(idx)) {
+                            updateMetadata(idx);
+                            updatePhaseSweepForFrame(idx);
+                        }
+                    }
+                }
+                
+                gd.removeAllListeners && gd.removeAllListeners('plotly_animatingframe');
+                gd.removeAllListeners && gd.removeAllListeners('plotly_animated');
+                
+                gd.on('plotly_animatingframe', function(data) {
+                    if (data && data.name) {
+                        var idx = parseInt(data.name.replace('f', ''));
+                        if (!isNaN(idx)) {
+                            updateMetadata(idx);
+                            updatePhaseSweepForFrame(idx);
+                        }
+                    } else {
+                        syncMetadata();
+                    }
+                });
+                
+                gd.on('plotly_animated', syncMetadata);
+                
+                setTimeout(function() {
+                    if (loopEnabled) {
+                        Plotly.animate(gd, null, {
+                            frame: {duration: 100, redraw: true},
+                            transition: {duration: 40, easing: "cubic-in-out"},
+                            mode: "immediate",
+                            fromcurrent: false
+                        });
+                    }
+                }, 300);
+                
+                gd.on('plotly_animated', function() {
+                    if (loopEnabled) {
+                        setTimeout(function() {
+                            if (loopEnabled) {
+                                Plotly.animate(gd, null, {
+                                    frame: {duration: 100, redraw: true},
+                                    transition: {duration: 40, easing: "cubic-in-out"},
+                                    mode: "immediate",
+                                    fromcurrent: false
+                                });
+                            }
+                        }, 50);
+                    }
+                });
+            }
+            
+            // Listen for message events from Streamlit
+            window.addEventListener("message", (e) => {
+                if (e.data.type === "streamlit:render") {
+                    var args = e.data.args;
+                    
+                    COND_MODE = args.cond_mode;
+                    peak_prolate = args.peak_prolate;
+                    peak_oblate = args.peak_oblate;
+                    max_p = args.max_p;
+                    sweepData = args.sweep_data;
+                    metadata = args.metadata;
+                    
+                    var oldAnimated = isAnimated;
+                    isAnimated = (args.mode_name !== "Static");
+
+                    var structuralInit = (!plotsInitialized || currentCondMode !== args.cond_mode);
+                    var modeChanged = (currentModeName !== args.mode_name);
+
+                    if (structuralInit) {
+                        // Full (re)build only when first loading or when the
+                        // conductivity/permittivity mode flips (heatmap z changes).
+                        currentCondMode = args.cond_mode;
+                        currentModeName = args.mode_name;
+                        loopEnabled = false;
+
+                        document.getElementById("phase-title").innerText =
+                            "2. " + (COND_MODE ? "Conductivity" : "Permittivity") + " vs. Frequency Phase Diagram";
+
+                        // The animation-frame slider is hidden in animation modes
+                        // (the operating point is shown by the live sliders / status).
+                        document.getElementById("progress-container").style.display = "none";
+                        var animSlider0 = document.getElementById("anim-slider");
+                        if (animSlider0) {
+                            animSlider0.max = metadata.length - 1;
+                            animSlider0.value = 0;
+                        }
+
+                        Plotly.newPlot(gd, args.fig_vesicle.data, args.fig_vesicle.layout, PLOT_CONFIG).then(function() {
+                            if (args.fig_vesicle.frames && args.fig_vesicle.frames.length > 0) {
+                                Plotly.addFrames(gd, args.fig_vesicle.frames);
+                            }
+                        });
+                        // Panels #2 and #3 are built ONCE and thereafter updated
+                        // only via restyle/relayout. They carry no frames, so they
+                        // never rebuild or re-range during animation.
+                        Plotly.newPlot(gd_phase, args.fig_phase.data, args.fig_phase.layout, PLOT_CONFIG);
+                        Plotly.newPlot(gd_sweep, args.fig_sweep.data, args.fig_sweep.layout, PLOT_CONFIG);
+
+                        // Fit the responsive plots to their (full-width) containers
+                        // once layout has settled. Without this the autosize figures
+                        // can render at a stale/narrow width, leaving white space.
+                        setTimeout(function() {
+                            try { Plotly.Plots.resize(gd_phase); } catch (e) {}
+                            try { Plotly.Plots.resize(gd_sweep); } catch (e) {}
+                            try { Plotly.Plots.resize(gd); } catch (e) {}
+                        }, 60);
+
+                        plotsInitialized = true;
+                        attachListeners();
+                    } else if (modeChanged) {
+                        // Animation toggled on/off (same cond_mode). Do NOT rebuild
+                        // any plot — that was the source of the load flash. Just
+                        // stop the current loop and swap the vesicle's frame set.
+                        currentModeName = args.mode_name;
+                        loopEnabled = false;
+
+                        document.getElementById("progress-container").style.display = "none";
+                        var animSlider1 = document.getElementById("anim-slider");
+                        if (animSlider1) {
+                            animSlider1.max = metadata.length - 1;
+                            animSlider1.value = 0;
+                        }
+
+                        // Replace the vesicle frame set in place (no newPlot).
+                        var refreshFrames = function() {
+                            if (args.fig_vesicle.frames && args.fig_vesicle.frames.length > 0) {
+                                Plotly.addFrames(gd, args.fig_vesicle.frames);
+                            }
+                        };
+                        if (gd.data) {
+                            // Update vesicle base traces/layout in place, then frames.
+                            Plotly.react(gd, args.fig_vesicle.data, args.fig_vesicle.layout).then(refreshFrames);
+                        } else {
+                            refreshFrames();
+                        }
+
+                        // The pinned sweep y-axis ranges depend on the mode (the
+                        // displayed ratio band differs), but we do NOT rebuild the
+                        // sweep panel on a mode toggle. Sync just the axis ranges
+                        // from the freshly sent figure so the curves stay framed.
+                        try {
+                            var sl = args.fig_sweep.layout || {};
+                            var rel = {};
+                            if (sl.xaxis && sl.xaxis.range) rel['xaxis.range'] = sl.xaxis.range;
+                            if (sl.yaxis && sl.yaxis.range) rel['yaxis.range'] = sl.yaxis.range;
+                            if (sl.yaxis2 && sl.yaxis2.range) rel['yaxis2.range'] = sl.yaxis2.range;
+                            if (Object.keys(rel).length) Plotly.relayout(gd_sweep, rel);
+                        } catch (e) {}
+                    }
+
+                    // The live operating-point sliders are the unified control: they
+                    // are always visible. Grabbing one stops any running animation.
+                    var manualBox = document.getElementById("manual-controls");
+                    if (manualBox) manualBox.style.display = "block";
+
+                    if (!isAnimated) {
+                        loopEnabled = false;
+                        // Seed the in-component sliders from the server-provided state
+                        // (e.g. on first load or after a click). Subsequent drags are
+                        // fully client-side and do not round-trip to the server.
+                        manualRatio = args.ratio;
+                        manualFreq = args.freq;
+                        var mR = document.getElementById("manual-ratio");
+                        var mF = document.getElementById("manual-freq");
+                        if (mR) mR.value = Math.log10(args.ratio);
+                        if (mF) mF.value = Math.log10(args.freq);
+                        var rlab = document.getElementById("manual-ratio-val");
+                        var flab = document.getElementById("manual-freq-val");
+                        if (rlab) rlab.innerText = args.ratio.toFixed(2);
+                        if (flab) flab.innerText = (args.freq >= 1000 ? args.freq.toExponential(0) : args.freq.toFixed(0));
+                        var rtl = document.getElementById("manual-ratio-label");
+                        if (rtl) rtl.innerText = COND_MODE ? "Conductivity ratio (σin/σout)" : "Permittivity ratio (εin/εout)";
+                        updatePlotsForOperatingPoint(args.ratio, args.freq);
+                    } else if (!oldAnimated || modeChanged) {
+                        updateMetadata(0);
+                        updatePhaseSweepForFrame(0);
+                        startAnimationLoop();
+                    }
+
+                    // Set frame height
+                    window.parent.postMessage({
+                        isStreamlitMessage: true,
+                        type: "streamlit:setFrameHeight",
+                        height: 930
+                    }, "*");
+                }
+            });
+            
+            // Register component readiness with Streamlit
+            window.parent.postMessage({
+                isStreamlitMessage: true,
+                type: "streamlit:componentReady",
+                apiVersion: 1
+            }, "*");
+        })();
+    </script>
+</body>
+</html>

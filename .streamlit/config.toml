@@ -1,0 +1,7 @@
+[theme]
+# Light theme — matches the white-background design without CSS overrides
+primaryColor      = "#2563eb"
+backgroundColor   = "#ffffff"
+secondaryBackgroundColor = "#f8fafc"
+textColor         = "#0f172a"
+font              = "sans serif"
